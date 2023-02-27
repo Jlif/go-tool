@@ -5,6 +5,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"log"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -21,6 +22,7 @@ func main() {
 	doc, err := goquery.NewDocumentFromReader(file)
 	doc.Find("div").Find(".memo").Each(func(i int, selection *goquery.Selection) {
 
+		//if selection.Find(".time").Text() == "2022-12-18 18:24:31" {
 		time := selection.Find(".time").Text()[0:10]
 		err := os.Mkdir(pwd+"/flomo", 0777)
 		if err != nil && !os.IsExist(err) {
@@ -39,7 +41,15 @@ func main() {
 
 		file.WriteString("- " + selection.Find(".time").Text()[11:16] + " ")
 		p := selection.Find(".content").Find("p")
-		file.WriteString(p.First().Text() + "<br>")
+
+		//如果首行带标签
+		if strings.ContainsAny(p.First().Text(), "#") {
+			file.WriteString(p.First().Text() + "<br>")
+		} else if p.First().Text() == "null" {
+			file.WriteString("")
+		} else {
+			file.WriteString(p.First().Text() + "<br><br>")
+		}
 
 		p.First().NextAll().Each(func(i int, selection *goquery.Selection) {
 			if selection.Text() != "" {
@@ -50,7 +60,15 @@ func main() {
 				}
 			}
 		})
+
+		selection.Find(".files").Find("img").Each(func(i int, selection *goquery.Selection) {
+			src, _ := selection.Attr("src")
+			arr := strings.Split(src, "/")
+			file.WriteString("![[" + arr[3] + "]]")
+		})
+
 		file.WriteString("\n")
+		//}
 
 	})
 
