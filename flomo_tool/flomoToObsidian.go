@@ -1,75 +1,107 @@
 package main
 
 import (
-	"fmt"
-	"github.com/PuerkitoBio/goquery"
+	"bufio"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 func main() {
 
 	flomoPath := "/Users/jiangchen/Downloads/flomo@江城子-20230130"
-	pwd, _ := os.Getwd()
 
 	file, err := os.OpenFile(flomoPath+"/index.html", os.O_RDONLY, 0666)
 	defer file.Close()
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(file)
-	doc.Find("div").Find(".memo").Each(func(i int, selection *goquery.Selection) {
+	memoArr := buildMemoArr(doc)
+	writeToFile(memoArr)
+}
 
-		//if selection.Find(".time").Text() == "2022-12-18 18:24:31" {
-		time := selection.Find(".time").Text()[0:10]
-		err := os.Mkdir(pwd+"/flomo", 0777)
-		if err != nil && !os.IsExist(err) {
-			log.Fatal(err)
-		}
+func writeToFile(memoArr []*memo) {
+	pwd, _ := os.Getwd()
+	err := os.Mkdir(pwd+"/flomo", 0777)
+	if err != nil && !os.IsExist(err) {
+		log.Fatal(err)
+	}
 
-		file, err = os.Create(pwd + "/flomo/" + time + ".md")
-		if os.IsExist(err) {
-			file, _ = os.OpenFile(pwd+"/flomo/"+time+".md", os.O_APPEND, 0777)
-		}
-		if err != nil && !os.IsExist(err) {
-			log.Fatal(err)
-		}
+	for _, memo := range memoArr {
+		file, _ := os.OpenFile(pwd+"/flomo/"+memo.time[0:10]+".md", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0777)
 
-		count := selection.Find(".content").Find("p").Length()
+		//写入文件时，使用带缓存的 *Writer
+		write := bufio.NewWriter(file)
+		write.WriteString("- " + memo.time[11:16] + " ")
 
-		file.WriteString("- " + selection.Find(".time").Text()[11:16] + " ")
-		p := selection.Find(".content").Find("p")
-
-		//如果首行带标签
-		if strings.ContainsAny(p.First().Text(), "#") {
-			file.WriteString(p.First().Text() + "<br>")
-		} else if p.First().Text() == "null" {
-			file.WriteString("")
-		} else {
-			file.WriteString(p.First().Text() + "<br><br>")
-		}
-
-		p.First().NextAll().Each(func(i int, selection *goquery.Selection) {
-			if selection.Text() != "" {
-				if count-1 == selection.Index() {
-					file.WriteString(selection.Text())
+		for i, v := range memo.content {
+			v = strings.Trim(v, " ")
+			if i == len(memo.content)-1 {
+				write.WriteString(v)
+			} else {
+				if strings.HasPrefix(v, "#") {
+					write.WriteString(v + "<br>")
 				} else {
-					file.WriteString(selection.Text() + "<br><br>")
+					write.WriteString(v + "<br><br>")
 				}
 			}
-		})
+		}
 
+		for _, v := range memo.files {
+			write.WriteString("![[" + v + "]]")
+		}
+		write.WriteString("\n")
+		//Flush将缓存的文件真正写入到文件中
+		write.Flush()
+
+	}
+
+}
+
+func buildMemoArr(doc *goquery.Document) []*memo {
+	var memoArr []*memo
+	doc.Find("div").Find(".memo").Each(func(i int, selection *goquery.Selection) {
+
+		// if strings.Contains(selection.Find(".time").Text(), "2022-12-18") {
+		curMemo := memo{}
+		time := selection.Find(".time").Text()
+		curMemo.time = time
+
+		var content []string
+		selection.Find(".content").Find("p").Each(func(i int, selection *goquery.Selection) {
+			if selection.Text() != "" && selection.Text() != "null" {
+				content = append(content, selection.Text())
+			}
+		})
+		curMemo.content = content
+
+		var files []string
 		selection.Find(".files").Find("img").Each(func(i int, selection *goquery.Selection) {
 			src, _ := selection.Attr("src")
 			arr := strings.Split(src, "/")
-			file.WriteString("![[" + arr[3] + "]]")
+			files = append(files, arr[3])
 		})
+		curMemo.files = files
 
-		file.WriteString("\n")
-		//}
-
+		memoArr = append(memoArr, &curMemo)
+		// }
 	})
+	return reverse(memoArr)
+}
 
+func reverse(slice []*memo) []*memo {
+	for i, j := 0, len(slice)-1; i < j; i, j = i+1, j-1 {
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+	return slice
+}
+
+type memo struct {
+	time    string
+	content []string
+	files   []string
 }
